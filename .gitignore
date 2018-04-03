@@ -1,0 +1,11 @@
+*.egg
+*.pyc
+.eggs/
+.pytest_cache/
+.tox/
+MANIFEST
+__pycache__
+build/
+dist/
+*.egg-info/
+scratch/
