@@ -24,9 +24,9 @@ context_queue = deque(maxlen=context_size)
 
 for i, e in enumerate(events):
     e = lp.LogEvent(*e)
-    start = max(0, i-d.W+1)
+    start = max(0, i-d.W)
     window = [ e.key for e in events[start:i] ]
-    window = pad_sequences([window], maxlen=d.W-1)[0]
+    window = pad_sequences([window], maxlen=d.W)[0]
 
     classes = d.predict_top_classes(window, tol=0.1)
 

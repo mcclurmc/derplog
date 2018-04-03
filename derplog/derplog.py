@@ -38,7 +38,7 @@ class Derplog:
 
         # self.model.add(Embedding(vocab_size, 128))
         # self.model.add(Embedding(vocab_size, 128, input_length=vocab_size-1))
-        self.model.add(Embedding(self.vocab_size, 128, input_length=self.W-1))
+        self.model.add(Embedding(self.vocab_size, 128, input_length=self.W))
         self.model.add(GRU(128, dropout=0.2, recurrent_dropout=0.2))
         self.model.add(Dense(self.vocab_size, activation='softmax'))
 
@@ -56,11 +56,11 @@ class Derplog:
     # then separate out y's and one-hot encode those.
     # def set_train_test_data(self, event_sequence, W, vocab_size, pct=0.8):
     def set_train_test_data(self, pct=0.8):
-        sequences = [ self.event_sequence[max(0,i-self.W):i+1]
+        sequences = [ self.event_sequence[max(0,i-self.W-1):i+1]
                       for i in range(len(self.event_sequence)-1) ]
-        sequences = pad_sequences(sequences, maxlen=self.W)
-        X = sequences[:,0:self.W-1]
-        y = sequences[:,self.W-1:self.W]
+        sequences = pad_sequences(sequences, maxlen=self.W+1)
+        X = sequences[:,0:self.W]
+        y = sequences[:,self.W:self.W+1]
         y = to_categorical(y, num_classes=self.vocab_size)
 
         split = round(len(X) * pct)
@@ -107,7 +107,7 @@ class Derplog:
     def predict(self, seq):
         if not hasattr(seq, '__getitem__'):
             seq = np.array(seq)
-        seq = pad_sequences(seq, maxlen=self.W-1)
+        seq = pad_sequences(seq, maxlen=self.W)
         y_hat = self.model.predict_classes(seq)
 
         return y_hat
@@ -116,7 +116,7 @@ class Derplog:
     def predict_proba(self, seq):
         if not hasattr(seq, '__getitem__'):
             seq = np.array(seq)
-        seq = pad_sequences(seq, maxlen=self.W-1)
+        seq = pad_sequences(seq, maxlen=self.W)
         y_hat_proba = self.model.predict_proba(seq)
 
         return y_hat_proba
