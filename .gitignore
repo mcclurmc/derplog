@@ -6,6 +6,7 @@
 MANIFEST
 __pycache__
 build/
+checkpoints/
 dist/
 *.egg-info/
 scratch/
