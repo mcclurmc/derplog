@@ -199,7 +199,7 @@ class LogParser:
         for logClust in logClustL:
             template_str = ' '.join(logClust.logTemplate)
             occurrence = len(logClust.logIDL)
-            template_id = hashlib.md5(template_str.encode('utf-8')).hexdigest()[0:8]
+            template_id = hashlib.md5(template_str).hexdigest()[0:8]
             for logID in logClust.logIDL:
                 logID -= 1
                 log_templates[logID] = template_str
@@ -217,14 +217,14 @@ class LogParser:
         occ_dict = dict(self.df_log['EventTemplate'].value_counts())
         df_event = pd.DataFrame()
         df_event['EventTemplate'] = self.df_log['EventTemplate'].unique()
-        df_event['EventId'] = df_event['EventTemplate'].map(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[0:8])
+        df_event['EventId'] = df_event['EventTemplate'].map(lambda x: hashlib.md5(x).hexdigest()[0:8])
         df_event['Occurrences'] = df_event['EventTemplate'].map(occ_dict)
         df_event.to_csv(os.path.join(self.savePath, self.logName + '_templates.csv'), index=False, columns=["EventId", "EventTemplate", "Occurrences"])
 
 
     def printTree(self, node, dep):
         pStr = ''
-        for i in xrange(dep):
+        for i in range(dep):
             pStr += '\t'
 
         if node.depth == 0:
@@ -234,7 +234,7 @@ class LogParser:
         else:
             pStr += node.digitOrtoken
 
-        print pStr
+        print(pStr)
 
         if node.depth == self.depth:
             return 1
@@ -273,7 +273,7 @@ class LogParser:
 
             count += 1
             if count % 1000 == 0 or count == len(self.df_log):
-                print 'Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log))
+                print('Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log)))
 
 
         if not os.path.exists(self.savePath):
