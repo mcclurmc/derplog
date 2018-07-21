@@ -46,7 +46,6 @@ class LogParser:
         self.depth = depth - 2
         self.st = st
         self.maxChild = maxChild
-        self.logName = None
         self.savePath = outdir
         self.df_log = None
         self.log_format = log_format
@@ -192,14 +191,14 @@ class LogParser:
 
         return retVal
 
-    def outputResult(self, logClustL):
+    def outputResult(self, logClustL, logName):
         log_templates = [0] * self.df_log.shape[0]
         log_templateids = [0] * self.df_log.shape[0]
         df_events = []
         for logClust in logClustL:
             template_str = ' '.join(logClust.logTemplate)
             occurrence = len(logClust.logIDL)
-            template_id = hashlib.md5(template_str).hexdigest()[0:8]
+            template_id = hashlib.md5(template_str.encode('utf-8')).hexdigest()[0:8]
             for logID in logClust.logIDL:
                 logID -= 1
                 log_templates[logID] = template_str
@@ -211,15 +210,16 @@ class LogParser:
         self.df_log['EventTemplate'] = log_templates
 
         # self.df_log.drop(['Content'], inplace=True, axis=1)
-        self.df_log.to_csv(os.path.join(self.savePath, self.logName + '_structured.csv'), index=False)
+        self.df_log.to_csv(os.path.join(self.savePath, logName + '_structured.csv'), index=False)
 
 
         occ_dict = dict(self.df_log['EventTemplate'].value_counts())
         df_event = pd.DataFrame()
         df_event['EventTemplate'] = self.df_log['EventTemplate'].unique()
-        df_event['EventId'] = df_event['EventTemplate'].map(lambda x: hashlib.md5(x).hexdigest()[0:8])
+        df_event['EventId'] = df_event['EventTemplate']\
+                              .map(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[0:8])
         df_event['Occurrences'] = df_event['EventTemplate'].map(occ_dict)
-        df_event.to_csv(os.path.join(self.savePath, self.logName + '_templates.csv'), index=False, columns=["EventId", "EventTemplate", "Occurrences"])
+        df_event.to_csv(os.path.join(self.savePath, logName + '_templates.csv'), index=False, columns=["EventId", "EventTemplate", "Occurrences"])
 
 
     def printTree(self, node, dep):
@@ -245,11 +245,10 @@ class LogParser:
     def parse(self, logName):
         print('Parsing file: ' + os.path.join(self.path, logName))
         start_time = datetime.now()
-        self.logName = logName
         rootNode = Node()
         logCluL = []
 
-        self.load_data()
+        self.load_data(logName)
 
         count = 0
         for idx, line in self.df_log.iterrows():
@@ -279,20 +278,20 @@ class LogParser:
         if not os.path.exists(self.savePath):
             os.makedirs(self.savePath)
 
-        self.outputResult(logCluL)
+        self.outputResult(logCluL, logName)
 
         print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
-    def load_data(self):
-        headers, regex = self.generate_logformat_regex(self.log_format)
-        self.df_log = self.log_to_dataframe(os.path.join(self.path, self.logName), regex, headers, self.log_format)
+    def load_data(self, logName):
+        headers, regex = self.generate_logformat_regex()
+        self.df_log = self.log_to_dataframe(os.path.join(self.path, logName), regex, headers)
 
     def preprocess(self, line):
         for currentRex in self.rex:
             line = re.sub(currentRex, '<*>', line)
         return line
 
-    def log_to_dataframe(self, log_file, regex, headers, logformat):
+    def log_to_dataframe(self, log_file, regex, headers):
         """ Function to transform log file to dataframe
         """
         log_messages = []
@@ -312,11 +311,11 @@ class LogParser:
         return logdf
 
 
-    def generate_logformat_regex(self, logformat):
+    def generate_logformat_regex(self):
         """ Function to generate regular expression to split log messages
         """
         headers = []
-        splitters = re.split(r'(<[^<>]+>)', logformat)
+        splitters = re.split(r'(<[^<>]+>)', self.log_format)
         regex = ''
         for k in range(len(splitters)):
             if k % 2 == 0:
