@@ -245,30 +245,14 @@ class LogParser:
     def parse(self, logName):
         print('Parsing file: ' + os.path.join(self.path, logName))
         start_time = datetime.now()
-        rootNode = Node()
-        logCluL = []
+        self.rootNode = Node()
+        self.logCluL = []
 
         self.load_data(logName)
 
         count = 0
         for idx, line in self.df_log.iterrows():
-            logID = line['LineId']
-            logmessageL = self.preprocess(line['Content']).strip().split()
-            # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
-            matchCluster = self.treeSearch(rootNode, logmessageL)
-
-            #Match no existing log cluster
-            if matchCluster is None:
-                newCluster = Logcluster(logTemplate=logmessageL, logIDL=[logID])
-                logCluL.append(newCluster)
-                self.addSeqToPrefixTree(rootNode, newCluster)
-
-            #Add the new log message to the existing cluster
-            else:
-                newTemplate = self.getTemplate(logmessageL, matchCluster.logTemplate)
-                matchCluster.logIDL.append(logID)
-                if ' '.join(newTemplate) != ' '.join(matchCluster.logTemplate):
-                    matchCluster.logTemplate = newTemplate
+            self.parseLine(line)
 
             count += 1
             if count % 1000 == 0 or count == len(self.df_log):
@@ -278,9 +262,28 @@ class LogParser:
         if not os.path.exists(self.savePath):
             os.makedirs(self.savePath)
 
-        self.outputResult(logCluL, logName)
+        self.outputResult(self.logCluL, logName)
 
         print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
+
+    def parseLine(self, line):
+        logID = line['LineId']
+        logmessageL = self.preprocess(line['Content']).strip().split()
+        # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
+        matchCluster = self.treeSearch(self.rootNode, logmessageL)
+
+        #Match no existing log cluster
+        if matchCluster is None:
+            newCluster = Logcluster(logTemplate=logmessageL, logIDL=[logID])
+            self.logCluL.append(newCluster)
+            self.addSeqToPrefixTree(self.rootNode, newCluster)
+
+        #Add the new log message to the existing cluster
+        else:
+            newTemplate = self.getTemplate(logmessageL, matchCluster.logTemplate)
+            matchCluster.logIDL.append(logID)
+            if ' '.join(newTemplate) != ' '.join(matchCluster.logTemplate):
+                matchCluster.logTemplate = newTemplate
 
     def load_data(self, logName):
         headers, regex = self.generate_logformat_regex()
