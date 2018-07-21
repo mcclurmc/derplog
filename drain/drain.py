@@ -30,7 +30,7 @@ class Node:
 
 
 class LogParser:
-    def __init__(self, log_format, indir='./', outdir='./result/', depth=4, st=0.4, maxChild=100, rex=[]):
+    def __init__(self, indir='./', outdir='./result/', depth=4, st=0.4, maxChild=100, rex=[]):
         """
         Attributes
         ----------
@@ -48,7 +48,6 @@ class LogParser:
         self.maxChild = maxChild
         self.savePath = outdir
         self.df_log = None
-        self.log_format = log_format
         self.rex = rex
 
     def hasNumbers(self, s):
@@ -286,47 +285,21 @@ class LogParser:
                 matchCluster.logTemplate = newTemplate
 
     def load_data(self, logName):
-        headers, regex = self.generate_logformat_regex()
-        self.df_log = self.log_to_dataframe(os.path.join(self.path, logName), regex, headers)
+        self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))
 
     def preprocess(self, line):
         for currentRex in self.rex:
             line = re.sub(currentRex, '<*>', line)
         return line
 
-    def log_to_dataframe(self, log_file, regex, headers):
+    def log_to_dataframe(self, log_file):
         """ Function to transform log file to dataframe
         """
         log_messages = []
         linecount = 0
         with open(log_file, 'r') as fin:
-            for line in fin.readlines():
-                try:
-                    match = regex.search(line.strip())
-                    message = [match.group(header) for header in headers]
-                    log_messages.append(message)
-                    linecount += 1
-                except Exception as e:
-                    pass
-        logdf = pd.DataFrame(log_messages, columns=headers)
+            lines = fin.readlines()
+        logdf = pd.DataFrame(lines, columns=['Content'])
         logdf.insert(0, 'LineId', None)
-        logdf['LineId'] = [i + 1 for i in range(linecount)]
+        logdf['LineId'] = [i + 1 for i in range(len(lines))]
         return logdf
-
-
-    def generate_logformat_regex(self):
-        """ Function to generate regular expression to split log messages
-        """
-        headers = []
-        splitters = re.split(r'(<[^<>]+>)', self.log_format)
-        regex = ''
-        for k in range(len(splitters)):
-            if k % 2 == 0:
-                splitter = re.sub(' +', '\s+', splitters[k])
-                regex += splitter
-            else:
-                header = splitters[k].strip('<').strip('>')
-                regex += '(?P<%s>.*?)' % header
-                headers.append(header)
-        regex = re.compile('^' + regex + '$')
-        return headers, regex
