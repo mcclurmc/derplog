@@ -8,6 +8,7 @@ import re
 import os
 import numpy as np
 import pandas as pd
+import fileinput
 import hashlib
 from datetime import datetime
 
@@ -49,6 +50,8 @@ class LogParser:
         self.savePath = outdir
         self.df_log = None
         self.rex = rex
+        self.rootNode = Node()
+        self.logCluL = []
 
     def hasNumbers(self, s):
         return any(char.isdigit() for char in s)
@@ -209,7 +212,10 @@ class LogParser:
         self.df_log['EventTemplate'] = log_templates
 
         # self.df_log.drop(['Content'], inplace=True, axis=1)
-        self.df_log.to_csv(os.path.join(self.savePath, logName + '_structured.csv'), index=False)
+        if logName:
+            self.df_log.to_csv(os.path.join(self.savePath, logName + '_structured.csv'), index=False)
+        else:
+            print(self.df_log)
 
 
         occ_dict = dict(self.df_log['EventTemplate'].value_counts())
@@ -218,7 +224,11 @@ class LogParser:
         df_event['EventId'] = df_event['EventTemplate']\
                               .map(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[0:8])
         df_event['Occurrences'] = df_event['EventTemplate'].map(occ_dict)
-        df_event.to_csv(os.path.join(self.savePath, logName + '_templates.csv'), index=False, columns=["EventId", "EventTemplate", "Occurrences"])
+        if logName:
+            df_event.to_csv(os.path.join(self.savePath, logName + '_templates.csv'),
+                            index=False, columns=["EventId", "EventTemplate", "Occurrences"])
+        else:
+            print(df_event)
 
 
     def printTree(self, node, dep):
@@ -241,29 +251,41 @@ class LogParser:
             self.printTree(node.childD[child], dep+1)
 
 
-    def parse(self, logName):
-        print('Parsing file: ' + os.path.join(self.path, logName))
-        start_time = datetime.now()
-        self.rootNode = Node()
-        self.logCluL = []
-
-        self.load_data(logName)
-
+    def parse(self, logName=None):
         count = 0
-        for idx, line in self.df_log.iterrows():
+
+        # If we don't get a log file, parse stdin
+        if logName:
+            print('Parsing file: ' + os.path.join(self.path, logName))
+            self.load_data(logName)
+            iterator = self.df_log.iterrows
+        else:
+            print('Parsing stdin...')
+            iterator = fileinput.input
+            self.df_log = pd.DataFrame(columns=['LineId', 'Content'])
+
+        start_time = datetime.now()
+        for line in iterator():
+            # df iterator returns a tuple we have to parse
+            if isinstance(line, tuple):
+                line = line[1]
+            else:
+                line = pd.Series({'LineId': count, 'Content': line.strip()})
+                self.df_log = self.df_log.append(line, ignore_index=True)
+
             self.parseLine(line)
 
             count += 1
-            if count % 1000 == 0 or count == len(self.df_log):
+            if logName and (count % 1000 == 0 or count == len(self.df_log)):
                 print('Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log)))
 
+        print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
         if not os.path.exists(self.savePath):
             os.makedirs(self.savePath)
 
+        print(self.df_log)
         self.outputResult(self.logCluL, logName)
-
-        print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
     def parseLine(self, line):
         logID = line['LineId']
