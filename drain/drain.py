@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import fileinput
 import hashlib
+import json
+import yaml
 from datetime import datetime
 
 
@@ -20,18 +22,66 @@ class Logcluster:
             logIDL = []
         self.logIDL = logIDL
 
+    def to_dict(self):
+        return {
+            'logTemplate': self.logTemplate,
+            'logIDL': self.logIDL,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            logTemplate=d['logTemplate'],
+            logIDL=d['logIDL'],
+        )
+
 
 class Node:
-    def __init__(self, childD=None, depth=0, digitOrtoken=None):
+    def __init__(self, childD=None, depth=0, digitOrToken=None):
         if childD is None:
             childD = dict()
         self.childD = childD
         self.depth = depth
-        self.digitOrtoken = digitOrtoken
+        self.digitOrToken = digitOrToken
+
+    def to_dict(self):
+        if type(self.childD) == dict:
+            children = { k: v.to_dict() for k, v in self.childD.items() }
+        else:
+            children = [ v.to_dict() for v in self.childD ]
+
+        return {
+            'depth': self.depth,
+            'digitOrToken': self.digitOrToken,
+            'children': children,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        if 'logTemplate' in d.keys():
+            return Logcluster.from_dict(d)
+
+        def key_of(k, depth):
+            if depth == 0:
+                return int(k)
+            else:
+                return k
+
+        def do_children(children, depth):
+            if type(children) == dict:
+                return { key_of(k, depth): cls.from_dict(v) for k, v in children.items() }
+            else:
+                return [ cls.from_dict(v) for v in children ]
+
+        return cls(
+            depth=d['depth'],
+            digitOrToken=d['digitOrToken'],
+            childD=do_children(d['children'], d['depth']),
+        )
 
 
 class LogParser:
-    def __init__(self, indir='./', outdir='./result/', depth=4, st=0.4, maxChild=100, rex=[]):
+    def __init__(self, indir='./', outdir='./result/', depth=4, st=0.4, maxChild=100, rex=[], verbose=False):
         """
         Attributes
         ----------
@@ -52,6 +102,7 @@ class LogParser:
         self.rex = rex
         self.rootNode = Node()
         self.logCluL = []
+        self.verbose = verbose
 
     def hasNumbers(self, s):
         return any(char.isdigit() for char in s)
@@ -87,7 +138,7 @@ class LogParser:
     def addSeqToPrefixTree(self, rn, logClust):
         seqLen = len(logClust.logTemplate)
         if seqLen not in rn.childD:
-            firtLayerNode = Node(depth=1, digitOrtoken=seqLen)
+            firtLayerNode = Node(depth=1, digitOrToken=seqLen)
             rn.childD[seqLen] = firtLayerNode
         else:
             firtLayerNode = rn.childD[seqLen]
@@ -110,18 +161,18 @@ class LogParser:
                 if not self.hasNumbers(token):
                     if '<*>' in parentn.childD:
                         if len(parentn.childD) < self.maxChild:
-                            newNode = Node(depth=currentDepth + 1, digitOrtoken=token)
+                            newNode = Node(depth=currentDepth + 1, digitOrToken=token)
                             parentn.childD[token] = newNode
                             parentn = newNode
                         else:
                             parentn = parentn.childD['<*>']
                     else:
                         if len(parentn.childD)+1 < self.maxChild:
-                            newNode = Node(depth=currentDepth+1, digitOrtoken=token)
+                            newNode = Node(depth=currentDepth+1, digitOrToken=token)
                             parentn.childD[token] = newNode
                             parentn = newNode
                         elif len(parentn.childD)+1 == self.maxChild:
-                            newNode = Node(depth=currentDepth+1, digitOrtoken='<*>')
+                            newNode = Node(depth=currentDepth+1, digitOrToken='<*>')
                             parentn.childD['<*>'] = newNode
                             parentn = newNode
                         else:
@@ -129,7 +180,7 @@ class LogParser:
 
                 else:
                     if '<*>' not in parentn.childD:
-                        newNode = Node(depth=currentDepth+1, digitOrtoken='<*>')
+                        newNode = Node(depth=currentDepth+1, digitOrToken='<*>')
                         parentn.childD['<*>'] = newNode
                         parentn = newNode
                     else:
@@ -197,6 +248,10 @@ class LogParser:
         log_templates = [0] * self.df_log.shape[0]
         log_templateids = [0] * self.df_log.shape[0]
         df_events = []
+
+        if not os.path.exists(self.savePath):
+            os.makedirs(self.savePath)
+
         for logClust in logClustL:
             template_str = ' '.join(logClust.logTemplate)
             occurrence = len(logClust.logIDL)
@@ -231,7 +286,10 @@ class LogParser:
             print(df_event)
 
 
-    def printTree(self, node, dep):
+    def printTree(self, node=None, dep=0):
+        if not node:
+            node = self.rootNode
+
         pStr = ''
         for i in range(dep):
             pStr += '\t'
@@ -239,9 +297,9 @@ class LogParser:
         if node.depth == 0:
             pStr += 'Root'
         elif node.depth == 1:
-            pStr += '<' + str(node.digitOrtoken) + '>'
+            pStr += '<' + str(node.digitOrToken) + '>'
         else:
-            pStr += node.digitOrtoken
+            pStr += node.digitOrToken
 
         print(pStr)
 
@@ -251,16 +309,53 @@ class LogParser:
             self.printTree(node.childD[child], dep+1)
 
 
+    def saveTree(self, outfile=None):
+        meta = {
+            'depth': self.depth,
+            'st': self.st,
+            'maxChild': self.maxChild,
+            'rex': self.rex,
+        }
+        tree = self.rootNode.to_dict()
+        out = {
+            'meta': meta,
+            'tree': tree,
+        }
+
+        if outfile:
+            with open(outfile, 'w') as f:
+                json.dump(out, f)
+        else:
+            return json.dumps(out)
+
+
+    def loadTree(self, infile):
+        with open(infile, 'r') as f:
+            tree = yaml.load(f)
+
+        if not tree:
+            return
+
+        self.depth = tree['meta']['depth']
+        self.st = tree['meta']['st']
+        self.maxChild = tree['meta']['maxChild']
+        self.rex = tree['meta']['rex']
+
+        self.rootNode = Node.from_dict(tree['tree'])
+
+
     def parse(self, logName=None):
         count = 0
 
         # If we don't get a log file, parse stdin
         if logName:
-            print('Parsing file: ' + os.path.join(self.path, logName))
+            if self.verbose:
+                print('Parsing file: ' + os.path.join(self.path, logName))
             self.load_data(logName)
             iterator = self.df_log.iterrows
         else:
-            print('Parsing stdin...')
+            if self.verbose:
+                print('Parsing stdin...')
             iterator = fileinput.input
             self.df_log = pd.DataFrame(columns=['LineId', 'Content'])
 
@@ -276,16 +371,15 @@ class LogParser:
             self.parseLine(line)
 
             count += 1
-            if logName and (count % 1000 == 0 or count == len(self.df_log)):
+            if self.verbose and logName and (count % 1000 == 0 or count == len(self.df_log)):
                 print('Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log)))
 
-        print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
+        if self.verbose:
+            print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
-        if not os.path.exists(self.savePath):
-            os.makedirs(self.savePath)
-
-        print(self.df_log)
-        self.outputResult(self.logCluL, logName)
+        # self.outputResult(self.logCluL, logName)
+        # self.printTree(self.rootNode)
+        # import pdb; pdb.set_trace()
 
     def parseLine(self, line):
         logID = line['LineId']
