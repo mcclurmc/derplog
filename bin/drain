@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+
+import click
+import pandas as pd
+import yaml
+
+from drain import drain
+
+
+def regex_from_yaml(f):
+    if not f:
+        return []
+
+    rs = yaml.load(f)
+    return [ r['regex'] for r in rs ]
+
+
+def start(ctx, args):
+    if ctx.obj['verbose']:
+        print(ctx.obj)
+        print(args)
+
+
+def finish(ctx):
+    if ctx.obj['tree_file']:
+        ctx.obj['parser'].saveTree(ctx.obj['tree_file'])
+
+    if ctx.obj['print_tree']:
+        print(ctx.obj['parser'].saveTree())
+
+
+@click.group()
+@click.option('-st', default=0.4, help='Similarity threshold')
+@click.option('-depth', default=4, help='Depth of all leaf nodes')
+@click.option('-max-child', default=100, help='Max number of children of an internal node')
+@click.option('-regex-file', type=click.File('r'), help='Yaml file of regexes for log preprocessing')
+@click.option('-tree-file', default=None, help='File for reading/writing log sig parse tree')
+@click.option('-print-tree', is_flag=True, default=False, help='Print log sig parse tree to stdout')
+@click.option('-verbose', is_flag=True, default=False)
+@click.pass_context
+def cli(ctx, **args):
+    rex = regex_from_yaml(args['regex_file'])
+    parser = drain.LogParser(rex=rex, depth=args['depth'], st=args['st'],
+                             maxChild=args['max_child'], verbose=args['verbose'])
+
+    if args['tree_file']:
+        parser.loadTree(args['tree_file'])
+
+    ctx.obj = {
+        'parser': parser,
+        'verbose': args['verbose'],
+        'tree_file': args['tree_file'],
+        'print_tree': args['print_tree'],
+    }
+
+
+@cli.command()
+@click.option('-i', help='Input file, logs to process')
+@click.pass_context
+def batch(ctx, **args):
+    start(ctx, args)
+
+    ctx.obj['parser'].parse(args['i'])
+
+    finish(ctx)
+
+
+@cli.command()
+@click.pass_context
+def stream(ctx, **args):
+    start(ctx, args)
+
+    stdin_text = click.get_text_stream('stdin')
+    for idx, line in enumerate(stdin_text):
+        line = pd.Series({'LineId': idx, 'Content': line.strip()})
+        ctx.obj['parser'].parseLine(line)
+
+    finish(ctx)
+
+if __name__ == '__main__':
+    cli()
