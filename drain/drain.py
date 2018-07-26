@@ -344,46 +344,28 @@ class LogParser:
         self.rootNode = Node.from_dict(tree['tree'])
 
 
-    def parse(self, logName=None):
+    def parse(self, logName):
+        if self.verbose:
+            print('Parsing file: ' + os.path.join(self.path, logName))
+        self.load_data(logName)
+
         count = 0
-
-        # If we don't get a log file, parse stdin
-        if logName:
-            if self.verbose:
-                print('Parsing file: ' + os.path.join(self.path, logName))
-            self.load_data(logName)
-            iterator = self.df_log.iterrows
-        else:
-            if self.verbose:
-                print('Parsing stdin...')
-            iterator = fileinput.input
-            self.df_log = pd.DataFrame(columns=['LineId', 'Content'])
-
         start_time = datetime.now()
-        for line in iterator():
-            # df iterator returns a tuple we have to parse
-            if isinstance(line, tuple):
-                line = line[1]
-            else:
-                line = pd.Series({'LineId': count, 'Content': line.strip()})
-                self.df_log = self.df_log.append(line, ignore_index=True)
 
-            self.parseLine(line)
+        for line in self.df_log.iterrows():
+            line = line[1]['Content']
+
+            self.parseLine(line, count)
 
             count += 1
-            if self.verbose and logName and (count % 1000 == 0 or count == len(self.df_log)):
+            if self.verbose and (count % 1000 == 0 or count == len(self.df_log)):
                 print('Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log)))
 
         if self.verbose:
             print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
-        # self.outputResult(self.logCluL, logName)
-        # self.printTree(self.rootNode)
-        # import pdb; pdb.set_trace()
-
-    def parseLine(self, line):
-        logID = line['LineId']
-        logmessageL = self.preprocess(line['Content']).strip().split()
+    def parseLine(self, line, logID):
+        logmessageL = self.preprocess(line).strip().split()
         # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
         matchCluster = self.treeSearch(self.rootNode, logmessageL)
 
@@ -393,12 +375,16 @@ class LogParser:
             self.logCluL.append(newCluster)
             self.addSeqToPrefixTree(self.rootNode, newCluster)
 
+            return newCluster
+
         #Add the new log message to the existing cluster
         else:
             newTemplate = self.getTemplate(logmessageL, matchCluster.logTemplate)
             matchCluster.logIDL.append(logID)
             if ' '.join(newTemplate) != ' '.join(matchCluster.logTemplate):
                 matchCluster.logTemplate = newTemplate
+
+            return matchCluster
 
     def load_data(self, logName):
         self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))

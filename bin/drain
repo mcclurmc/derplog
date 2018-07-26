@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import click
-import pandas as pd
+import json
 import yaml
 
 from drain import drain
@@ -72,8 +72,8 @@ def stream(ctx, **args):
 
     stdin_text = click.get_text_stream('stdin')
     for idx, line in enumerate(stdin_text):
-        line = pd.Series({'LineId': idx, 'Content': line.strip()})
-        ctx.obj['parser'].parseLine(line)
+        logClu = ctx.obj['parser'].parseLine(line, idx)
+        print(json.dumps(logClu.to_dict()))
 
     finish(ctx)
 
