@@ -12,8 +12,8 @@ import fileinput
 import hashlib
 import json
 import yaml
-from datetime import datetime
 
+from datetime import datetime
 
 class Logcluster:
     def __init__(self, logTemplate='', logIDL=None, templateId=None):
@@ -32,7 +32,8 @@ class Logcluster:
 
     def set_logTemplate(self, logTemplate):
         self.__logTemplate = logTemplate
-        self.templateRegex = '\s+'.join([ '(.*)' if r == '<*>' else re.escape(r) for r in logTemplate ])
+        self.templateRegexStr = '\s+'.join([ '(.*)' if r == '<*>' else re.escape(r) for r in logTemplate ])
+        self.templateRegex = re.compile(self.templateRegexStr)
         self.templateId = hashlib.md5(str(self).encode('utf-8')).hexdigest()[0:8]
 
     logTemplate = property(get_logTemplate, set_logTemplate, doc='Set logTemplate and update templateId and templateRegex')
@@ -120,6 +121,15 @@ class LogParser:
         self.rootNode = Node()
         self.logCluL = []
         self.verbose = verbose
+        self.color_r = re.compile(r'\x1b\[\d*m')
+
+    def get_rex(self):
+        return self.__rex
+
+    def set_rex(self, rex):
+        self.__rex = [ re.compile(r) for r in rex ]
+
+    rex = property(get_rex, set_rex)
 
     def hasNumbers(self, s):
         return any(char.isdigit() for char in s)
@@ -372,7 +382,7 @@ class LogParser:
             print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
 
     def parseLine(self, line, logID):
-        logmessageL = self.preprocess(line).strip().split()
+        logmessageL = self.preprocess(self.strip_color(line)).strip().split()
         # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
         matchCluster = self.treeSearch(self.rootNode, logmessageL)
 
@@ -393,8 +403,11 @@ class LogParser:
 
             return matchCluster
 
+    def strip_color(self, line):
+        return self.color_r.sub('', line)
+
     def extract_parameters(self, logClu, line):
-        m = re.match(logClu.templateRegex, line)
+        m = logClu.templateRegex.match(self.strip_color(line))
         return (list(m.groups()) if m else [])
 
     def load_data(self, logName):
@@ -402,7 +415,7 @@ class LogParser:
 
     def preprocess(self, line):
         for currentRex in self.rex:
-            line = re.sub(currentRex, '<*>', line)
+            line = currentRex.sub('<*>', line)
         return line
 
     def log_to_dataframe(self, log_file):
