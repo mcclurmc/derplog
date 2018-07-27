@@ -1,0 +1,6 @@
+#!/usr/bin/env python
+
+import fileinput
+
+for idx, line in enumerate(fileinput.input()):
+    print(idx, line)

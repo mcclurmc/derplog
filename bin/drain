@@ -2,6 +2,7 @@
 
 import click
 import json
+import os
 import yaml
 
 from drain import drain
@@ -15,13 +16,11 @@ def regex_from_yaml(f):
     return [ r['regex'] for r in rs ]
 
 
-def start(ctx, args):
-    if ctx.obj['verbose']:
-        print(ctx.obj)
-        print(args)
+def common_start(ctx, args):
+    pass
 
 
-def finish(ctx):
+def common_end(ctx):
     if ctx.obj['tree_file']:
         ctx.obj['parser'].saveTree(ctx.obj['tree_file'])
 
@@ -43,7 +42,7 @@ def cli(ctx, **args):
     parser = drain.LogParser(rex=rex, depth=args['depth'], st=args['st'],
                              maxChild=args['max_child'], verbose=args['verbose'])
 
-    if args['tree_file']:
+    if args['tree_file'] and os.path.exists(args['tree_file']):
         parser.loadTree(args['tree_file'])
 
     ctx.obj = {
@@ -58,24 +57,31 @@ def cli(ctx, **args):
 @click.option('-i', help='Input file, logs to process')
 @click.pass_context
 def batch(ctx, **args):
-    start(ctx, args)
+    common_start(ctx, args)
 
     ctx.obj['parser'].parse(args['i'])
+    ctx.obj['parser'].outputResult()
 
-    finish(ctx)
+    common_end(ctx)
 
 
 @cli.command()
 @click.pass_context
 def stream(ctx, **args):
-    start(ctx, args)
+    common_start(ctx, args)
 
     stdin_text = click.get_text_stream('stdin')
     for idx, line in enumerate(stdin_text):
         logClu = ctx.obj['parser'].parseLine(line, idx)
-        print(json.dumps(logClu.to_dict()))
+        params = ctx.obj['parser'].extract_parameters(logClu.logTemplate, line)
 
-    finish(ctx)
+        r = logClu.to_dict()
+        r['params'] = params
+        r.pop('logIDL')
+
+        print(json.dumps(r))
+
+    common_end(ctx)
 
 if __name__ == '__main__':
     cli()

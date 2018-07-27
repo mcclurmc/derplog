@@ -16,16 +16,21 @@ from datetime import datetime
 
 
 class Logcluster:
-    def __init__(self, logTemplate='', logIDL=None):
+    def __init__(self, logTemplate='', logIDL=None, templateId=None):
         self.logTemplate = logTemplate
         if logIDL is None:
             logIDL = []
         self.logIDL = logIDL
+        self.templateId = hashlib.md5(str(self).encode('utf-8')).hexdigest()[0:8]
+
+    def __str__(self):
+        return ' '.join(self.logTemplate)
 
     def to_dict(self):
         return {
             'logTemplate': self.logTemplate,
             'logIDL': self.logIDL,
+            'templateId': self.templateId,
         }
 
     @classmethod
@@ -33,6 +38,7 @@ class Logcluster:
         return cls(
             logTemplate=d['logTemplate'],
             logIDL=d['logIDL'],
+            templateId=d['templateId'],
         )
 
 
@@ -244,7 +250,7 @@ class LogParser:
 
         return retVal
 
-    def outputResult(self, logClustL, logName):
+    def outputResult(self):
         log_templates = [0] * self.df_log.shape[0]
         log_templateids = [0] * self.df_log.shape[0]
         df_events = []
@@ -252,38 +258,28 @@ class LogParser:
         if not os.path.exists(self.savePath):
             os.makedirs(self.savePath)
 
-        for logClust in logClustL:
-            template_str = ' '.join(logClust.logTemplate)
+        for logClust in self.logCluL:
             occurrence = len(logClust.logIDL)
-            template_id = hashlib.md5(template_str.encode('utf-8')).hexdigest()[0:8]
             for logID in logClust.logIDL:
                 logID -= 1
-                log_templates[logID] = template_str
-                log_templateids[logID] = template_id
-            df_events.append([template_id, template_str, occurrence])
+                log_templates[logID] = str(logClust)
+                log_templateids[logID] = logClust.templateId
+            df_events.append([logClust.templateId, str(logClust), occurrence])
 
         df_event = pd.DataFrame(df_events, columns=['EventId', 'EventTemplate', 'Occurrences'])
         self.df_log['EventId'] = log_templateids
         self.df_log['EventTemplate'] = log_templates
-
-        # self.df_log.drop(['Content'], inplace=True, axis=1)
-        if logName:
-            self.df_log.to_csv(os.path.join(self.savePath, logName + '_structured.csv'), index=False)
-        else:
-            print(self.df_log)
 
 
         occ_dict = dict(self.df_log['EventTemplate'].value_counts())
         df_event = pd.DataFrame()
         df_event['EventTemplate'] = self.df_log['EventTemplate'].unique()
         df_event['EventId'] = df_event['EventTemplate']\
-                              .map(lambda x: hashlib.md5(x.encode('utf-8')).hexdigest()[0:8])
+                              .map(lambda x: hashlib.md5(str(x).encode('utf-8')).hexdigest()[0:8])
         df_event['Occurrences'] = df_event['EventTemplate'].map(occ_dict)
-        if logName:
-            df_event.to_csv(os.path.join(self.savePath, logName + '_templates.csv'),
-                            index=False, columns=["EventId", "EventTemplate", "Occurrences"])
-        else:
-            print(df_event)
+
+        for _, item in df_event.sort_values('Occurrences', ascending=False).iterrows():
+            print("%d: [%s] %s" % (item['Occurrences'], item['EventId'], item['EventTemplate']))
 
 
     def printTree(self, node=None, dep=0):
@@ -355,7 +351,7 @@ class LogParser:
         for line in self.df_log.iterrows():
             line = line[1]['Content']
 
-            self.parseLine(line, count)
+            self.logCluL.append(self.parseLine(line, count))
 
             count += 1
             if self.verbose and (count % 1000 == 0 or count == len(self.df_log)):
@@ -385,6 +381,22 @@ class LogParser:
                 matchCluster.logTemplate = newTemplate
 
             return matchCluster
+
+    def extract_parameters(self, template, line):
+        # Turn template into regex (eventually move this into
+        # Logcluster class). Split on wildcard character, escape the
+        # result, join result with regex wildcard match group (.*)
+        r = '(.*)'.join([ re.escape(r) for r in ' '.join(template).split('<*>') ])
+
+        # We have to normalize spacing in the original log line
+        line = ' '.join(line.split())
+
+        m = re.match(r, line)
+
+        if m:
+            return list(m.groups())
+        else:
+            return []
 
     def load_data(self, logName):
         self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))
