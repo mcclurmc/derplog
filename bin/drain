@@ -73,7 +73,7 @@ def stream(ctx, **args):
     stdin_text = click.get_text_stream('stdin')
     for idx, line in enumerate(stdin_text):
         logClu = ctx.obj['parser'].parseLine(line, idx)
-        params = ctx.obj['parser'].extract_parameters(logClu.logTemplate, line)
+        params = ctx.obj['parser'].extract_parameters(logClu, line)
 
         r = logClu.to_dict()
         r['params'] = params

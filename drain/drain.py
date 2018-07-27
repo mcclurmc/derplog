@@ -18,13 +18,24 @@ from datetime import datetime
 class Logcluster:
     def __init__(self, logTemplate='', logIDL=None, templateId=None):
         self.logTemplate = logTemplate
+
         if logIDL is None:
             logIDL = []
         self.logIDL = logIDL
-        self.templateId = hashlib.md5(str(self).encode('utf-8')).hexdigest()[0:8]
+
 
     def __str__(self):
         return ' '.join(self.logTemplate)
+
+    def get_logTemplate(self):
+        return self.__logTemplate
+
+    def set_logTemplate(self, logTemplate):
+        self.__logTemplate = logTemplate
+        self.templateRegex = '\s+'.join([ '(.*)' if r == '<*>' else re.escape(r) for r in logTemplate ])
+        self.templateId = hashlib.md5(str(self).encode('utf-8')).hexdigest()[0:8]
+
+    logTemplate = property(get_logTemplate, set_logTemplate, doc='Set logTemplate and update templateId and templateRegex')
 
     def to_dict(self):
         return {
@@ -382,21 +393,9 @@ class LogParser:
 
             return matchCluster
 
-    def extract_parameters(self, template, line):
-        # Turn template into regex (eventually move this into
-        # Logcluster class). Split on wildcard character, escape the
-        # result, join result with regex wildcard match group (.*)
-        r = '(.*)'.join([ re.escape(r) for r in ' '.join(template).split('<*>') ])
-
-        # We have to normalize spacing in the original log line
-        line = ' '.join(line.split())
-
-        m = re.match(r, line)
-
-        if m:
-            return list(m.groups())
-        else:
-            return []
+    def extract_parameters(self, logClu, line):
+        m = re.match(logClu.templateRegex, line)
+        return (list(m.groups()) if m else [])
 
     def load_data(self, logName):
         self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))
