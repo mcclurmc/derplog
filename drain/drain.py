@@ -7,7 +7,6 @@ License     : MIT
 import re
 import os
 import numpy as np
-import pandas as pd
 import fileinput
 import hashlib
 import json
@@ -328,19 +327,15 @@ class LogParser:
     def parse(self, logName):
         if self.verbose:
             print('Parsing file: ' + os.path.join(self.path, logName))
-        self.load_data(logName)
 
-        count = 0
         start_time = datetime.now()
 
-        for line in self.df_log.iterrows():
-            line = line[1]['Content']
+        with open(logName, 'r') as f:
+            for idx, line in enumerate(f):
+                self.logCluL.append(self.parseLine(line))
 
-            self.logCluL.append(self.parseLine(line, count))
-
-            count += 1
-            if self.verbose and (count % 1000 == 0 or count == len(self.df_log)):
-                print('Processed {0:.1f}% of log lines.'.format(count * 100.0 / len(self.df_log)))
+                if self.verbose and (idx % 1000 == 0):
+                    print('.')
 
         if self.verbose:
             print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
@@ -348,7 +343,7 @@ class LogParser:
                 print(json.dumps(l.to_dict()))
 
 
-    def parseLine(self, line, logID):
+    def parseLine(self, line):
         logmessageL = self.preprocess(self.strip_color(line))
         logmessageL = logmessageL.strip().split()
         # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
@@ -390,22 +385,7 @@ class LogParser:
 
         return params
 
-    def load_data(self, logName):
-        self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))
-
     def preprocess(self, line):
         for currentRex in self.rex:
             line = currentRex.sub('<*>', line)
         return line
-
-    def log_to_dataframe(self, log_file):
-        """ Function to transform log file to dataframe
-        """
-        log_messages = []
-        linecount = 0
-        with open(log_file, 'r') as fin:
-            lines = fin.readlines()
-        logdf = pd.DataFrame(lines, columns=['Content'])
-        logdf.insert(0, 'LineId', None)
-        logdf['LineId'] = [i + 1 for i in range(len(lines))]
-        return logdf
