@@ -16,13 +16,9 @@ import yaml
 from datetime import datetime
 
 class Logcluster:
-    def __init__(self, logTemplate='', logIDL=None, templateId=None):
+    def __init__(self, logTemplate='', templateId=None):
         self.logTemplate = logTemplate
-
-        if logIDL is None:
-            logIDL = []
-        self.logIDL = logIDL
-
+        self.count = 1
 
     def __str__(self):
         return ' '.join(self.logTemplate)
@@ -32,16 +28,15 @@ class Logcluster:
 
     def set_logTemplate(self, logTemplate):
         self.__logTemplate = logTemplate
-        self.templateRegexStr = '\s+'.join([ '(.*)' if r == '<*>' else re.escape(r) for r in logTemplate ])
-        self.templateRegex = re.compile(self.templateRegexStr)
         self.templateId = hashlib.md5(str(self).encode('utf-8')).hexdigest()[0:8]
 
-    logTemplate = property(get_logTemplate, set_logTemplate, doc='Set logTemplate and update templateId and templateRegex')
+    logTemplate = property(get_logTemplate, set_logTemplate,
+                           doc='Set logTemplate and update templateId and templateRegex')
 
     def to_dict(self):
         return {
             'logTemplate': self.logTemplate,
-            'logIDL': self.logIDL,
+            'count': self.count,
             'templateId': self.templateId,
         }
 
@@ -49,7 +44,7 @@ class Logcluster:
     def from_dict(cls, d):
         return cls(
             logTemplate=d['logTemplate'],
-            logIDL=d['logIDL'],
+            count=d['count'],
             templateId=d['templateId'],
         )
 
@@ -271,37 +266,6 @@ class LogParser:
 
         return retVal
 
-    def outputResult(self):
-        log_templates = [0] * self.df_log.shape[0]
-        log_templateids = [0] * self.df_log.shape[0]
-        df_events = []
-
-        if not os.path.exists(self.savePath):
-            os.makedirs(self.savePath)
-
-        for logClust in self.logCluL:
-            occurrence = len(logClust.logIDL)
-            for logID in logClust.logIDL:
-                logID -= 1
-                log_templates[logID] = str(logClust)
-                log_templateids[logID] = logClust.templateId
-            df_events.append([logClust.templateId, str(logClust), occurrence])
-
-        df_event = pd.DataFrame(df_events, columns=['EventId', 'EventTemplate', 'Occurrences'])
-        self.df_log['EventId'] = log_templateids
-        self.df_log['EventTemplate'] = log_templates
-
-
-        occ_dict = dict(self.df_log['EventTemplate'].value_counts())
-        df_event = pd.DataFrame()
-        df_event['EventTemplate'] = self.df_log['EventTemplate'].unique()
-        df_event['EventId'] = df_event['EventTemplate']\
-                              .map(lambda x: hashlib.md5(str(x).encode('utf-8')).hexdigest()[0:8])
-        df_event['Occurrences'] = df_event['EventTemplate'].map(occ_dict)
-
-        for _, item in df_event.sort_values('Occurrences', ascending=False).iterrows():
-            print("%d: [%s] %s" % (item['Occurrences'], item['EventId'], item['EventTemplate']))
-
 
     def printTree(self, node=None, dep=0):
         if not node:
@@ -380,15 +344,19 @@ class LogParser:
 
         if self.verbose:
             print('Parsing done. [Time taken: {!s}]'.format(datetime.now() - start_time))
+            for l in self.logCluL:
+                print(json.dumps(l.to_dict()))
+
 
     def parseLine(self, line, logID):
-        logmessageL = self.preprocess(self.strip_color(line)).strip().split()
+        logmessageL = self.preprocess(self.strip_color(line))
+        logmessageL = logmessageL.strip().split()
         # logmessageL = filter(lambda x: x != '', re.split('[\s=:,]', self.preprocess(line['Content'])))
         matchCluster = self.treeSearch(self.rootNode, logmessageL)
 
         #Match no existing log cluster
         if matchCluster is None:
-            newCluster = Logcluster(logTemplate=logmessageL, logIDL=[logID])
+            newCluster = Logcluster(logTemplate=logmessageL)
             self.logCluL.append(newCluster)
             self.addSeqToPrefixTree(self.rootNode, newCluster)
 
@@ -397,7 +365,7 @@ class LogParser:
         #Add the new log message to the existing cluster
         else:
             newTemplate = self.getTemplate(logmessageL, matchCluster.logTemplate)
-            matchCluster.logIDL.append(logID)
+            matchCluster.count += 1
             if ' '.join(newTemplate) != ' '.join(matchCluster.logTemplate):
                 matchCluster.logTemplate = newTemplate
 
@@ -407,8 +375,20 @@ class LogParser:
         return self.color_r.sub('', line)
 
     def extract_parameters(self, logClu, line):
-        m = logClu.templateRegex.match(self.strip_color(line))
-        return (list(m.groups()) if m else [])
+        lineTokens = self.strip_color(line).strip().split()
+        params = []
+
+        for tokT, tokL in zip(logClu.logTemplate, lineTokens):
+            if tokT == '<*>':
+                params.append(tokL)
+            elif '<*>' in tokT:
+                m = re.match('(.+)'.join([ re.escape(t) for t in tokT.split('<*>') ]), tokL)
+                if m:
+                    params.append(m.groups()[0])
+                else:
+                    params.append(tokT)
+
+        return params
 
     def load_data(self, logName):
         self.df_log = self.log_to_dataframe(os.path.join(self.path, logName))

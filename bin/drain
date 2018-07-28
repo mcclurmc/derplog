@@ -60,7 +60,6 @@ def batch(ctx, **args):
     common_start(ctx, args)
 
     ctx.obj['parser'].parse(args['i'])
-    ctx.obj['parser'].outputResult()
 
     common_end(ctx)
 
@@ -77,7 +76,6 @@ def stream(ctx, **args):
 
         r = logClu.to_dict()
         r['params'] = params
-        r.pop('logIDL')
 
         print(json.dumps(r))
 
